@@ -29,9 +29,9 @@ protected step may run
 release commit, which includes the security fix preventing caller-supplied
 context from overriding verified GitHub-derived facts.
 
-Use `AtlaSent-Systems-Inc/atlasent-action@v1` for the normal floating-major
+Use `Atlasent/atlasent-action@v1` for the normal floating-major
 form. Organizations that require an immutable dependency pin can use
-`AtlaSent-Systems-Inc/atlasent-action@eaf6e17c50340f97a5a1cec53d9aea9b64c2a6f1`.
+`Atlasent/atlasent-action@eaf6e17c50340f97a5a1cec53d9aea9b64c2a6f1`.
 
 ## Quick start
 
@@ -46,7 +46,7 @@ jobs:
     steps:
       - name: Authorization gate
         id: gate
-        uses: AtlaSent-Systems-Inc/atlasent-action@v1
+        uses: Atlasent/atlasent-action@v1
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
           ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -161,7 +161,7 @@ Provide `GITHUB_TOKEN` when the policy depends on review evidence:
 ```yaml
 - name: Authorization gate
   id: gate
-  uses: AtlaSent-Systems-Inc/atlasent-action@v1
+  uses: Atlasent/atlasent-action@v1
   env:
     ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
     ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -212,7 +212,7 @@ and always see the original deny.
 ```yaml
 - name: Authorization gate
   id: gate
-  uses: AtlaSent-Systems-Inc/atlasent-action@v1
+  uses: Atlasent/atlasent-action@v1
   env:
     ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
     ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -278,7 +278,7 @@ jobs:
       execution_hash: ${{ steps.gate.outputs.execution-hash }}
     steps:
       - id: gate
-        uses: AtlaSent-Systems-Inc/atlasent-action@v1
+        uses: Atlasent/atlasent-action@v1
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
           ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -312,7 +312,7 @@ jobs:
           fi
 
       - id: verify
-        uses: AtlaSent-Systems-Inc/atlasent-action@v1
+        uses: Atlasent/atlasent-action@v1
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
           ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -340,7 +340,7 @@ The same execution contract can gate a provisioned clinical action:
 ```yaml
 - name: Clinical unblinding gate
   id: gate
-  uses: AtlaSent-Systems-Inc/atlasent-action@v1
+  uses: Atlasent/atlasent-action@v1
   env:
     ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
     ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -419,7 +419,7 @@ AtlaSent Console:
 ```yaml
       - name: AtlaSent gate
         id: gate
-        uses: AtlaSent-Systems-Inc/atlasent-action@v1
+        uses: Atlasent/atlasent-action@v1
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
           ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -499,7 +499,7 @@ decision.
 
 ```yaml
       - name: AtlaSent gate
-        uses: AtlaSent-Systems-Inc/atlasent-action@v1
+        uses: Atlasent/atlasent-action@v1
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
           ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -533,7 +533,7 @@ SHA, changed files, check-run conclusions) and call AtlaSent's
 ```yaml
       - name: AtlaSent Change Brief
         id: brief
-        uses: AtlaSent-Systems-Inc/atlasent-action@v1
+        uses: Atlasent/atlasent-action@v1
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
           ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -545,7 +545,7 @@ SHA, changed files, check-run conclusions) and call AtlaSent's
 
       - name: AtlaSent gate
         id: gate
-        uses: AtlaSent-Systems-Inc/atlasent-action@v1
+        uses: Atlasent/atlasent-action@v1
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
           ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -622,7 +622,7 @@ jobs:
     permissions:
       id-token: write   # GitHub workload identity for the solo_operator.attest mint
     steps:
-      - uses: AtlaSent-Systems-Inc/atlasent-action@v1
+      - uses: Atlasent/atlasent-action@v1
         id: attest
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
@@ -643,7 +643,7 @@ jobs:
       id-token: write
       pull-requests: write
     steps:
-      - uses: AtlaSent-Systems-Inc/atlasent-action@v1
+      - uses: Atlasent/atlasent-action@v1
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
           ATLASENT_BASE_URL: ${{ secrets.ATLASENT_BASE_URL }}
@@ -671,7 +671,7 @@ each time, or the attestation and the evaluate call derive different hashes
 and the control denies):
 
 ```yaml
-      - uses: AtlaSent-Systems-Inc/atlasent-action@v1
+      - uses: Atlasent/atlasent-action@v1
         with:
           solo-operator-attest: "true"
           action: control.override
@@ -694,7 +694,7 @@ fails the step — it is pure GitHub-facing signal, in the same
 never-authorizes-anything spirit as governance-agent findings (see below).
 
 ```yaml
-      - uses: AtlaSent-Systems-Inc/atlasent-action@v1
+      - uses: Atlasent/atlasent-action@v1
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
@@ -742,10 +742,10 @@ They do not change the core rule: a protected execution path should proceed only
 when its required authorization and verification checks have actually passed.
 
 For agent-tool interception rather than GitHub CI, use the public
-[`atlasent-mcp-server`](https://github.com/AtlaSent-Systems-Inc/atlasent-mcp-server)
-or the public [`atlasent-sdk`](https://github.com/AtlaSent-Systems-Inc/atlasent-sdk).
+[`atlasent-mcp-server`](https://github.com/Atlasent/atlasent-mcp-server)
+or the public [`atlasent-sdk`](https://github.com/Atlasent/atlasent-sdk).
 For independent audit-chain verification, use
-[`atlasent-verify`](https://github.com/AtlaSent-Systems-Inc/atlasent-verify).
+[`atlasent-verify`](https://github.com/Atlasent/atlasent-verify).
 
 ## Security
 
