@@ -1,7 +1,7 @@
 name: Move v1 floating tag
 
 # Manual fallback for repointing the floating `v1` tag (the one customers
-# reference via `uses: AtlaSent-Systems-Inc/atlasent-action@v1`). Normally the
+# reference via `uses: Atlasent/atlasent-action@v1`). Normally the
 # Release workflow moves `v1` automatically on every v1.x release; use this only
 # to correct v1 out of band. No hardcoded SHA — it resolves the target tag.
 
@@ -47,7 +47,7 @@ jobs:
 
       # ── AtlaSent gate ────────────────────────────────────────────────────
       # This workflow force-repoints the floating `v1` tag that every
-      # consumer's `uses: AtlaSent-Systems-Inc/atlasent-action@v1` resolves
+      # consumer's `uses: Atlasent/atlasent-action@v1` resolves
       # to, org-wide — without going through release.yml's build/sign/verify
       # pipeline at all. Gate it the same way release.yml gates a real
       # release, on the action's own code (uses: ./), so a repoint is
@@ -70,7 +70,7 @@ jobs:
       # template `package_release_create_v1_tag_service_identity` — four
       # exact-match dimensions, no wildcard/prefix/regex anywhere in it:
       #   1. repository   — context.repository/context.repo ==
-      #                      'AtlaSent-Systems-Inc/atlasent-action' (already
+      #                      'Atlasent/atlasent-action' (already
       #                      auto-derived from GITHUB_REPOSITORY and forced to
       #                      win over this step's own `context:` input by
       #                      atlasent-action's context-override fix — see
