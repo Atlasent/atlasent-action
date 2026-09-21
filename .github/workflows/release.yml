@@ -130,7 +130,7 @@ jobs:
       #      what the policy actually checks, and this run's fallback
       #      warning about `idp_broker:mint` should be resolved or ruled
       #      out as unrelated in the same pass. Full job log:
-      #      https://github.com/AtlaSent-Systems-Inc/atlasent-action/actions/runs/34530024051/job/103048215470
+      #      https://github.com/Atlasent/atlasent-action/actions/runs/34530024051/job/103048215470
       - name: AtlaSent release gate
         if: ${{ github.event.inputs.bootstrap != 'true' }}
         uses: ./
@@ -174,7 +174,7 @@ jobs:
         run: |
           cosign verify-blob \
             --bundle=dist/index.js.bundle \
-            --certificate-identity-regexp='https://github.com/AtlaSent-Systems-Inc/atlasent-action/.github/workflows/release.yml@.*' \
+            --certificate-identity-regexp='https://github.com/Atlasent/atlasent-action/.github/workflows/release.yml@.*' \
             --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
             dist/index.js
 
@@ -213,7 +213,7 @@ jobs:
           fi
 
       # ── Move the floating v1 tag to this release ──────────────────────────
-      # Customers reference `uses: AtlaSent-Systems-Inc/atlasent-action@v1`, so
+      # Customers reference `uses: Atlasent/atlasent-action@v1`, so
       # v1 must track the latest v1.x release. Replaces the old workflow that
       # force-pushed v1 to a hardcoded, drift-prone SHA.
       - name: Update floating v1 tag
