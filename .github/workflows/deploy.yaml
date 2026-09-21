@@ -1,7 +1,7 @@
 name: AtlaSent Deploy Gate (Demo)
 
 # Demo: gate deploys through AtlaSent before they execute.
-# In your repo, replace uses: ./ with: uses: AtlaSent-Systems-Inc/atlasent-action@v1
+# In your repo, replace uses: ./ with: uses: Atlasent/atlasent-action@v1
 
 on:
   workflow_dispatch:
