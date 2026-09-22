@@ -338,19 +338,51 @@ gh workflow run release.yml -f ref=v1.x.y -f bootstrap=true
 
 Required secrets: `ATLASENT_API_KEY`, `ATLASENT_BASE_URL`.
 
-> **Release gate currently denies on a real (non-bootstrap) tag push
-> (confirmed 2026-09-10, run 34530024051 — see `release.yml`'s own "KNOWN
-> OPEN ISSUES" comment, item 3, for the full trace).** `dist/index.js`
-> verification and actor resolution both succeeded; the gate reached real
-> policy evaluation and denied with `Authorization DENIED: No template
-> condition matched`, after an approvals check against PR #174 (0
-> approving reviews — a tag push has no PR of its own to check). Reads as
-> a template-shape gap for tag-push releases specifically. Needs
-> investigation against the org's real `package.release` bundle (Supabase
-> access) before any fix — do not guess at the context shape. Until
-> resolved, a real release requires the same `bootstrap=true` gate-skip
-> path used for the original v1.3.0 bootstrap (manual `workflow_dispatch`,
-> not a plain tag push).
+> **CORRECTED 2026-09-22 — the release gate ALLOWS a real tag push, and has
+> since 2026-09-10 21:51Z. Do NOT use `bootstrap=true` to work around it.**
+> This paragraph previously said the gate "currently denies on a real
+> (non-bootstrap) tag push (confirmed 2026-09-10, run 34530024051)" and
+> instructed that "a real release requires the same `bootstrap=true`
+> gate-skip path". Both halves were true when written and are now wrong in
+> the harmful direction: the standing instruction routes a reader around a
+> working authorization gate, which is the one outcome a stale note must
+> never produce.
+>
+> Verified by reading this repo's own `package.release` evaluations on the
+> runtime system of record (read-only, founder-authorized, no new standing
+> production-read capability), not from a workflow log or an issue status:
+>
+> | When (UTC) | ref | event | Decision |
+> |---|---|---|---|
+> | 2026-08-29 05:46:37 | `refs/tags/v1.5.0` | push | **allow** |
+> | 2026-09-10 21:04:03 | `refs/tags/v1.6.0` | push | deny ← the documented one |
+> | 2026-09-10 21:51:55 | `refs/tags/v1.6.0` | push | **allow** |
+> | 2026-09-11 06:53 / 17:57 / 18:05 | `refs/tags/v1.6.0` | workflow_dispatch | **allow** |
+> | 2026-09-11 18:01:17 | `refs/heads/main` | workflow_dispatch | deny |
+>
+> Two things the table settles. A real tag push had **already** allowed on
+> 2026-08-29, eleven days *before* the deny this note was built on — so
+> "denies on a tag push" was never the general rule, and the 2026-09-10
+> deny was resolved 48 minutes later on the same tag. And the final row is
+> the gate working as designed, not a residual bug: the template requires a
+> tag ref, so a dispatch from `refs/heads/main` has no immutable git ref
+> proving what was released and is correctly refused. Do not broaden the
+> template to make that row pass.
+>
+> The "needs investigation against the org's real `package.release` bundle
+> — do not guess at the context shape" instruction was right to insist on
+> the live read, and that read has now happened. The context shape was
+> never the problem. **What actually decides whether a release gate can
+> reach `allow` is which tenant the pipeline's `ATLASENT_API_KEY`
+> authenticates as** — the release-manager templates are seeded per
+> organization, so a key issued for one tenant cannot match a template
+> seeded into another, however correct the template is. This repo's key
+> resolves to a tenant that carries its template. `atlasent-sdk`'s does
+> not, which is why every npm and framework-package publish there has been
+> denied since 2026-08-22 while this repo's releases work. Full diagnosis,
+> with identifiers, is in `atlasent-internal`
+> `planning/PACKAGE_RELEASE_GATE_ORG_TARGETING_2026-09-22.md`; identifiers
+> are deliberately kept out of this public repo.
 
 ## Branch convention
 

@@ -59,10 +59,19 @@ jobs:
       # the chicken-and-egg of publishing v1 before any v1 exists to gate with.
       # Subsequent tag-push releases run the gate.
       #
-      # KNOWN OPEN ISSUES (both require atlasent-api / operator action, NOT
-      # an atlasent-action code change — do not "fix" either by spoofing the
-      # actor or context below):
-      #   1. STILL OPEN (unverified as of 2026-08-21). The last real
+      # KNOWN ISSUES — items 1 and 3 are RESOLVED (verified 2026-09-22,
+      # see each). Item 2 remains open. None of them was ever an
+      # atlasent-action code change — do not "fix" any of them by spoofing
+      # the actor or context below:
+      #   1. RESOLVED — was "STILL OPEN (unverified as of 2026-08-21)".
+      #      Authentication demonstrably works: this repo's
+      #      `package.release` evaluations reach real policy evaluation from
+      #      2026-08-29 05:46:37Z onward (allow), and an evaluation record
+      #      cannot exist at all behind the 401 described below, which is
+      #      returned before any policy is evaluated. Verified 2026-09-22 by
+      #      the same read-only, founder-authorized query of the runtime
+      #      system of record cited in item 3 — not from a workflow
+      #      conclusion. The original trace, kept for history: the last real
       #      (non-bootstrap) gate runs (2026-06-29, run IDs 28344572087 /
       #      28344637307) failed closed with "AtlaSent Gate: Authentication
       #      failed (HTTP 401)" from `POST /v1-evaluate` — before any policy
@@ -108,29 +117,52 @@ jobs:
       #   `idp_broker:mint`, a separate, lower-priority gap — the fallback
       #   is the documented, working path per issue 2's own migration).
       #
-      #   3. NEW, OPEN as of 2026-09-10 (run 34530024051, actor
-      #      `github:bettyc925`, environment `prod`, context exactly as
-      #      sent below). The gate reached real policy evaluation and
-      #      denied: `AtlaSent: PR #174 has 0 approving reviews` followed
-      #      by `Authorization DENIED: No template condition matched`. PR
-      #      #174 is simply the most recently merged PR on `main` at tag
-      #      time — a tag push has no PR of its own for the approvals
-      #      reader to inspect, so it fell back to that and found none.
-      #      This reads as a template-shape mismatch specific to a
-      #      **tag-push** release (as opposed to whatever context shape the
-      #      org's `package.release` bundle actually has an allow path
-      #      for) — the same failure class `atlasent-control-plane`'s
-      #      CLAUDE.md documents fixing several times for its own publish
-      #      gates by adding `context.event_name`/`context.workflow` fields
-      #      the seeded templates matched on. Do NOT speculatively add
-      #      those fields here without first reading the org's real
-      #      `package.release` bundle/template rows (Supabase access
-      #      required) — this comment block's own standing rule is not to
-      #      "fix" a gate failure by reshaping the context without knowing
-      #      what the policy actually checks, and this run's fallback
-      #      warning about `idp_broker:mint` should be resolved or ruled
-      #      out as unrelated in the same pass. Full job log:
+      #   3. RESOLVED 2026-09-10 21:51:55Z — was "NEW, OPEN as of
+      #      2026-09-10". Kept rather than deleted because the reasoning
+      #      below was half right in a way worth preserving, and because
+      #      CLAUDE.md carried the stale version of it for eleven days.
+      #
+      #      What happened: run 34530024051 (actor `github:bettyc925`,
+      #      environment `prod`) reached real policy evaluation and denied
+      #      with `AtlaSent: PR #174 has 0 approving reviews` followed by
+      #      `Authorization DENIED: No template condition matched`. PR #174
+      #      was simply the most recently merged PR on `main` at tag time —
+      #      a tag push has no PR of its own for the approvals reader to
+      #      inspect, so it fell back to that and found none. That part of
+      #      the diagnosis was correct and is not the denial's cause: the
+      #      release-manager template does not read approvals at all.
+      #      Full job log:
       #      https://github.com/Atlasent/atlasent-action/actions/runs/34530024051/job/103048215470
+      #
+      #      Why it is resolved: the SAME tag (`refs/tags/v1.6.0`, same
+      #      `push` event, same actor) evaluated **allow** 48 minutes later
+      #      at 21:51:55Z, and every subsequent release evaluation for this
+      #      repo has allowed. A real tag push had also already allowed on
+      #      2026-08-29 05:46:37Z for `refs/tags/v1.5.0` — eleven days
+      #      BEFORE this deny — so "denies on a tag push" was never the
+      #      general rule. Verified 2026-09-22 by a read-only, founder-
+      #      authorized query of this repo's own `package.release`
+      #      evaluations on the runtime system of record; not inferred from
+      #      a workflow conclusion or an issue status.
+      #
+      #      This block's standing rule was vindicated, so keep it: do NOT
+      #      "fix" a gate denial by reshaping the context until you have
+      #      read the org's real `package.release` bundle. When that read
+      #      finally happened (2026-09-22) the context shape turned out to
+      #      be fine, and the thing that actually decides whether a release
+      #      gate can allow is WHICH TENANT the pipeline's
+      #      `ATLASENT_API_KEY` authenticates as — templates are seeded per
+      #      organization, so a key issued for one tenant cannot match a
+      #      template seeded into another. Speculatively adding
+      #      `context.*` fields here would have changed nothing and
+      #      obscured that. `atlasent-sdk` is the repo where this is still
+      #      live: see `atlasent-internal`
+      #      `planning/PACKAGE_RELEASE_GATE_ORG_TARGETING_2026-09-22.md`
+      #      (identifiers stay out of this public repo).
+      #
+      #      Still genuinely open, unchanged and unrelated: the
+      #      `idp_broker:mint` 403 noted in item 2 above, which the actor
+      #      fallback correctly works around.
       - name: AtlaSent release gate
         if: ${{ github.event.inputs.bootstrap != 'true' }}
         uses: ./
