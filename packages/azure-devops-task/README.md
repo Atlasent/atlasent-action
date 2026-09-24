@@ -88,6 +88,7 @@ does with `secrets.*` — an explicit `env:` block on the step is required):
 | `environment` | auto | When blank: inferred from the `ATLASENT_API_KEY` prefix (`ask_test_`/`ask_live_`), else from `Build.SourceBranch` (`main`/`master` → `live`, otherwise `test`) — the same heuristic the GitHub Action applies to `github.ref`. |
 | `azureSubscriptionId` | — | The Azure subscription this step will change. Give it together with `azureResourceGroup`. Bound into the evaluate context as `context.azure`, signed into the permit, and re-checked when the permit is verified — so give the **same values on the `verifyPermit: true` step**. |
 | `azureResourceGroup` | — | The resource group this step will change. See [Protecting an Azure deployment](#protecting-an-azure-deployment). |
+| `azureDeploymentName` | — | Optional, recommended. The ARM deployment name the deploy will use; requires the subscription and resource group. Only that deployment can verify the decision's effect. |
 | `context` | `{}` | JSON object of additional context passed to the evaluator. | The task also records this run's Azure DevOps metadata (`System.CollectionUri`, `System.TeamProject`, `Build.DefinitionName`, `Build.BuildId`, `Build.Repository.Name`, `Build.SourceVersion`) as `context.azure_devops`, unless `context` already sets that key. That metadata is the pipeline's own description of itself: it is recorded for audit and correlation and grants nothing.
 | `approvalsFrom` | `none` | `none` or `pr-reviews`. **`pr-reviews` is accepted but not yet implemented** — Azure Repos pull request reviews are not auto-derived in this v1 task; a warning is logged and the call proceeds as `none`. Pass `context: '{"approvals": N}'` explicitly if your policy requires an approval count. |
 | `waitForApproval` | `false` | Set `true` to pause on hold/escalate and resume once a human resolves it, instead of failing immediately. Ignored in `mode: evaluate-only`. |
@@ -212,7 +213,9 @@ uses three pieces in one pipeline:
 
 1. **Before the change** — this task in `mode: evaluate-only` with
    `azureSubscriptionId` / `azureResourceGroup`. The Azure scope is signed
-   into the permit.
+   into the permit. Also give `azureDeploymentName`, the ARM deployment name
+   the deploy step will use (recommended): AtlaSent stores it with the
+   decision, and only that deployment can verify the decision in step 3.
 2. **At the change** — this task with `verifyPermit: true` and the **same**
    Azure scope, immediately before the deploy. A permit issued for one
    subscription or resource group fails closed against another
@@ -220,13 +223,17 @@ uses three pieces in one pipeline:
 3. **After the change** — a call to `v1-azure-effect-verify` with the
    decision's `evaluationId` and the Azure operation's correlation id.
    AtlaSent reads Azure's Activity Log itself and records `verified`,
-   `mismatch` or `unknown`. This requires the org's Azure connection for the
+   `mismatch` or `unknown`. The response's `operation_bound` is `true` only
+   when step 1 named the deployment; without it, `verified` proves an
+   operation in the authorized scope, not that it was this decision's. This requires the org's Azure connection for the
    subscription to be `connected` with this resource group selected.
 
 ```yaml
 variables:
   subscriptionId: 00000000-0000-0000-0000-000000000000
   resourceGroup: rg-prod-eastus
+  # Named before the deploy runs, unique per run, and bound to the decision.
+  deploymentName: web-$(Build.BuildId)
 
 stages:
   - stage: Authorize
@@ -245,6 +252,7 @@ stages:
               mode: evaluate-only
               azureSubscriptionId: $(subscriptionId)
               azureResourceGroup: $(resourceGroup)
+              azureDeploymentName: $(deploymentName)
 
   - stage: Deploy
     dependsOn: Authorize
@@ -278,7 +286,7 @@ stages:
               inlineScript: |
                 set -euo pipefail
                 corr=$(az deployment group create -g "$(resourceGroup)" \
-                  --template-file main.bicep --query properties.correlationId -o tsv)
+                  --name "$(deploymentName)" --template-file main.bicep --query properties.correlationId -o tsv)
                 echo "##vso[task.setvariable variable=correlationId;isOutput=true]$corr"
 
           - bash: |

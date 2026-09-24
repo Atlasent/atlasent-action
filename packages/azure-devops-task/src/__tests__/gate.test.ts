@@ -591,6 +591,34 @@ describe("Azure scope binding", () => {
     );
   });
 
+  it("carries the ARM deployment name into context.azure, from the input or from context", () => {
+    const scope = { azureSubscriptionIdRaw: SUB, azureResourceGroupRaw: "rg-prod" };
+    expect(parseInputs(baseEnv({ ...scope, azureDeploymentNameRaw: " web-2026.09(1) " })).context.azure).toEqual({
+      subscription_id: SUB.toLowerCase(),
+      resource_group: "rg-prod",
+      deployment_name: "web-2026.09(1)",
+    });
+    // A deployment_name in the JSON context used to be dropped when the task
+    // rebuilt context.azure; it is now kept.
+    const ctx = JSON.stringify({ azure: { subscription_id: SUB, resource_group: "rg-prod", deployment_name: "web" } });
+    expect(parseInputs(baseEnv({ contextRaw: ctx })).context.azure).toMatchObject({ deployment_name: "web" });
+    expect(parseInputs(baseEnv({ ...scope, contextRaw: ctx, azureDeploymentNameRaw: "WEB" })).context.azure)
+      .toMatchObject({ deployment_name: "WEB" });
+  });
+
+  it("rejects a deployment name that is malformed, disagrees, or has no scope", () => {
+    const scope = { azureSubscriptionIdRaw: SUB, azureResourceGroupRaw: "rg-prod" };
+    for (const bad of ["has space", "a".repeat(65), "../x", "web'x"]) {
+      expect(() => parseInputs(baseEnv({ ...scope, azureDeploymentNameRaw: bad }))).toThrow(/deployment name/);
+    }
+    const ctx = JSON.stringify({ azure: { subscription_id: SUB, resource_group: "rg-prod", deployment_name: "web" } });
+    expect(() => parseInputs(baseEnv({ ...scope, contextRaw: ctx, azureDeploymentNameRaw: "api" }))).toThrow(/disagrees/);
+    expect(() =>
+      parseInputs(baseEnv({ contextRaw: JSON.stringify({ azure: { subscription_id: SUB, resource_group: "rg", deployment_name: 7 } }) }))
+    ).toThrow(GateInputError);
+    expect(() => parseInputs(baseEnv({ azureDeploymentNameRaw: "web" }))).toThrow(/requires azureSubscriptionId/);
+  });
+
   it("leaves context untouched when no Azure scope is given", () => {
     expect(parseInputs(baseEnv()).context.azure).toBeUndefined();
   });

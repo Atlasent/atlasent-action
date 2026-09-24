@@ -128,6 +128,7 @@ export interface RawGateEnv {
    *  permit and v1-verify-permit re-checks at the execution boundary. */
   azureSubscriptionIdRaw?: string | undefined;
   azureResourceGroupRaw?: string | undefined;
+  azureDeploymentNameRaw?: string | undefined;
   /** Azure DevOps predefined variables describing this run. Recorded as
    *  `context.azure_devops` for audit and later correlation; they are the
    *  pipeline's own claims about itself, never authority. */
@@ -146,6 +147,8 @@ export interface AzureDevOpsRunContext {
 
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RESOURCE_GROUP_RE = /^[-\w.()]{1,90}$/;
+/** ARM deployment names: 1-64 of alphanumerics, underscore, hyphen, period and parentheses. */
+const DEPLOYMENT_NAME_RE = /^[-\w.()]{1,64}$/;
 
 /**
  * Resolve the Azure locus from the dedicated inputs and/or `context.azure`.
@@ -157,7 +160,8 @@ export function resolveAzureLocus(
   subscriptionRaw: string | undefined,
   resourceGroupRaw: string | undefined,
   context: Record<string, unknown>,
-): { subscription_id: string; resource_group: string } | undefined {
+  deploymentNameRaw?: string | undefined,
+): { subscription_id: string; resource_group: string; deployment_name?: string } | undefined {
   let sub = (subscriptionRaw ?? "").trim();
   let rg = (resourceGroupRaw ?? "").trim();
 
@@ -171,7 +175,12 @@ export function resolveAzureLocus(
   }
 
   if (!sub && !rg) {
-    if (!fromContext) return undefined;
+    if (!fromContext) {
+      if ((deploymentNameRaw ?? "").trim()) {
+        throw new GateInputError("azureDeploymentName requires azureSubscriptionId and azureResourceGroup");
+      }
+      return undefined;
+    }
     sub = typeof fromContext.subscription_id === "string" ? fromContext.subscription_id.trim() : "";
     rg = typeof fromContext.resource_group === "string" ? fromContext.resource_group.trim() : "";
     if (!sub || !rg) {
@@ -193,6 +202,27 @@ export function resolveAzureLocus(
       String(fromContext.resource_group ?? "").trim().toLowerCase() !== locus.resource_group)
   ) {
     throw new GateInputError("`context.azure` disagrees with azureSubscriptionId/azureResourceGroup");
+  }
+
+  // The ARM deployment this step will run, named before it runs. AtlaSent
+  // stores it with the decision, and only that deployment can later verify
+  // the decision's effect. Given as azureDeploymentName or as
+  // context.azure.deployment_name; if both, they must agree.
+  const fromInput = (deploymentNameRaw ?? "").trim();
+  const ctxName = fromContext?.deployment_name;
+  if (ctxName !== undefined && typeof ctxName !== "string") {
+    throw new GateInputError("`context.azure.deployment_name` must be a string");
+  }
+  const fromCtx = (ctxName ?? "").trim();
+  if (fromInput && fromCtx && fromInput.toLowerCase() !== fromCtx.toLowerCase()) {
+    throw new GateInputError("`context.azure.deployment_name` disagrees with azureDeploymentName");
+  }
+  const deploymentName = fromInput || fromCtx;
+  if (deploymentName) {
+    if (!DEPLOYMENT_NAME_RE.test(deploymentName)) {
+      throw new GateInputError("azureDeploymentName is not a valid ARM deployment name (1-64 of letters, digits, _ - . ( ))");
+    }
+    return { ...locus, deployment_name: deploymentName };
   }
   return locus;
 }
@@ -271,7 +301,12 @@ export function parseInputs(env: RawGateEnv): GateInputs {
     context = parsed as Record<string, unknown>;
   }
 
-  const azure = resolveAzureLocus(env.azureSubscriptionIdRaw, env.azureResourceGroupRaw, context);
+  const azure = resolveAzureLocus(
+    env.azureSubscriptionIdRaw,
+    env.azureResourceGroupRaw,
+    context,
+    env.azureDeploymentNameRaw,
+  );
   if (azure) context = { ...context, azure };
   const run = runContext(env.run);
   if (Object.keys(run).length > 0 && context["azure_devops"] === undefined) {

@@ -9,7 +9,7 @@
   "author": "AtlaSent Systems, Inc.",
   "version": {
     "Major": 1,
-    "Minor": 1,
+    "Minor": 2,
     "Patch": 0
   },
   "instanceNameFormat": "AtlaSent Gate: $(action)",
@@ -87,6 +87,13 @@
       "label": "Azure resource group",
       "required": false,
       "helpMarkDown": "The resource group this step will change. Must be one of the production resource groups selected on the org's Azure connection for the Activity Log check to apply."
+    },
+    {
+      "name": "azureDeploymentName",
+      "type": "string",
+      "label": "Azure deployment name",
+      "required": false,
+      "helpMarkDown": "Optional, recommended. The ARM deployment name this step will use (az deployment group create --name). Requires azureSubscriptionId and azureResourceGroup. AtlaSent stores it with the decision, so only that deployment can later verify the decision's effect in Azure's Activity Log."
     },
     {
       "name": "context",
