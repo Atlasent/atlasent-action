@@ -4,6 +4,14 @@ All notable changes to `atlasent-action` are documented here.
 
 ## [Unreleased]
 
+### `@atlasent/enforce` and `@atlasent/action` 2.0.1 (npm)
+
+Republish with repository/homepage/bugs links pointing at the Atlasent GitHub
+org. The version bump itself makes no code changes. npm's latest
+`@atlasent/enforce` is still 2.0.0, so 2.0.1 is also the first npm release of
+the `@atlasent/enforce` changes merged since then (see the entries below).
+The `@atlasent/action` build output is unchanged from 2.0.0.
+
 ### Fixed: `verify-permit: 'true'` dropped the `context` input
 
 The execution-boundary step (`verify-permit: 'true'`) ignored `context`, so a
