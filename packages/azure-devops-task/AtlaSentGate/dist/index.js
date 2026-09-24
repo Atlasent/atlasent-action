@@ -7404,7 +7404,7 @@ var require_dist = __commonJS({
   "../enforce/dist/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.EnforceError = void 0;
+    exports2.CLOUD_LOCUS_CONTEXT_KEYS = exports2.EnforceError = void 0;
     exports2.evaluate = evaluate2;
     exports2.verify = verify2;
     exports2.waitForApprovalResolution = waitForApprovalResolution2;
@@ -7603,6 +7603,7 @@ var require_dist = __commonJS({
       }
       throw new EnforceError2(`Approval wait timed out after ${config.maxWaitMs}ms with no human resolution \u2014 failing closed`, "evaluate");
     }
+    exports2.CLOUD_LOCUS_CONTEXT_KEYS = ["aws", "azure"];
     async function postVerify(config, permitToken, decision) {
       const apiUrl = (config.apiUrl ?? DEFAULT_API_URL).replace(/\/$/, "");
       const bodyObj = {
@@ -7617,6 +7618,14 @@ var require_dist = __commonJS({
       const payloadHash = decision?.executionHashExpected ?? config.executionPayloadHash;
       if (payloadHash != null)
         bodyObj["payload_hash"] = payloadHash;
+      const locus = {};
+      for (const key of exports2.CLOUD_LOCUS_CONTEXT_KEYS) {
+        const value = config.context?.[key];
+        if (value != null)
+          locus[key] = value;
+      }
+      if (Object.keys(locus).length > 0)
+        bodyObj["context"] = locus;
       const missing = (config.requiredBindings ?? []).filter((b) => bodyObj[b] == null || bodyObj[b] === "");
       if (missing.length > 0) {
         throw new EnforceError2(`verify-permit refused: required binding(s) absent: ${missing.join(", ")}`, "verify-permit", decision, { outcome: "invalid", verifyErrorCode: "MISSING_BINDING" });
@@ -7744,6 +7753,50 @@ var tl = __toESM(require_task());
 
 // src/gate.ts
 var import_enforce = __toESM(require_dist());
+var GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var RESOURCE_GROUP_RE = /^[-\w.()]{1,90}$/;
+function resolveAzureLocus(subscriptionRaw, resourceGroupRaw, context) {
+  let sub = (subscriptionRaw ?? "").trim();
+  let rg = (resourceGroupRaw ?? "").trim();
+  let fromContext;
+  if (context["azure"] !== void 0) {
+    const c = context["azure"];
+    if (!c || typeof c !== "object" || Array.isArray(c)) {
+      throw new GateInputError("`context.azure` must be an object with subscription_id and resource_group");
+    }
+    fromContext = c;
+  }
+  if (!sub && !rg) {
+    if (!fromContext)
+      return void 0;
+    sub = typeof fromContext.subscription_id === "string" ? fromContext.subscription_id.trim() : "";
+    rg = typeof fromContext.resource_group === "string" ? fromContext.resource_group.trim() : "";
+    if (!sub || !rg) {
+      throw new GateInputError("`context.azure` must carry both subscription_id and resource_group");
+    }
+  } else if (!sub || !rg) {
+    throw new GateInputError("azureSubscriptionId and azureResourceGroup must be given together");
+  }
+  if (!GUID_RE.test(sub))
+    throw new GateInputError("azureSubscriptionId must be a subscription GUID");
+  if (!RESOURCE_GROUP_RE.test(rg) || rg.endsWith(".")) {
+    throw new GateInputError("azureResourceGroup is not a valid Azure resource group name");
+  }
+  const locus = { subscription_id: sub.toLowerCase(), resource_group: rg.toLowerCase() };
+  if (fromContext && (String(fromContext.subscription_id ?? "").trim().toLowerCase() !== locus.subscription_id || String(fromContext.resource_group ?? "").trim().toLowerCase() !== locus.resource_group)) {
+    throw new GateInputError("`context.azure` disagrees with azureSubscriptionId/azureResourceGroup");
+  }
+  return locus;
+}
+function runContext(run) {
+  const out = {};
+  for (const [k, v] of Object.entries(run ?? {})) {
+    const t = (v ?? "").trim();
+    if (t)
+      out[k] = t;
+  }
+  return out;
+}
 var GateInputError = class extends Error {
 };
 function resolveEnvironment(explicit, apiKey, sourceBranch) {
@@ -7783,6 +7836,13 @@ function parseInputs(env) {
       throw new GateInputError("`context` input must be a JSON object");
     }
     context = parsed;
+  }
+  const azure = resolveAzureLocus(env.azureSubscriptionIdRaw, env.azureResourceGroupRaw, context);
+  if (azure)
+    context = { ...context, azure };
+  const run = runContext(env.run);
+  if (Object.keys(run).length > 0 && context["azure_devops"] === void 0) {
+    context = { ...context, azure_devops: run };
   }
   const approvalsFromRaw = (env.approvalsFromRaw ?? "none").trim().toLowerCase();
   const approvalsFrom = approvalsFromRaw === "pr-reviews" ? "pr-reviews" : "none";
@@ -8038,7 +8098,17 @@ async function main() {
     // RELEASE_REQUESTEDFOR) for us.
     buildRequestedFor: tl.getVariable("Build.RequestedFor"),
     releaseRequestedFor: tl.getVariable("Release.RequestedFor"),
-    sourceBranch: tl.getVariable("Build.SourceBranch")
+    sourceBranch: tl.getVariable("Build.SourceBranch"),
+    azureSubscriptionIdRaw: tl.getInput("azureSubscriptionId", false),
+    azureResourceGroupRaw: tl.getInput("azureResourceGroup", false),
+    run: {
+      organization_url: tl.getVariable("System.CollectionUri"),
+      project: tl.getVariable("System.TeamProject"),
+      pipeline: tl.getVariable("Build.DefinitionName"),
+      run_id: tl.getVariable("Build.BuildId"),
+      repository: tl.getVariable("Build.Repository.Name"),
+      commit: tl.getVariable("Build.SourceVersion")
+    }
   };
   let inputs;
   try {

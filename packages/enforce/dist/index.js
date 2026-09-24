@@ -7,7 +7,7 @@
 //   3. verifyPermit() — calls POST /v1-verify-permit; replay/expired tokens block
 //   4. enforce()      — composes all three; fn never runs unless all steps pass
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EnforceError = void 0;
+exports.CLOUD_LOCUS_CONTEXT_KEYS = exports.EnforceError = void 0;
 exports.evaluate = evaluate;
 exports.verify = verify;
 exports.waitForApprovalResolution = waitForApprovalResolution;
@@ -296,6 +296,9 @@ async function waitForApprovalResolution(config) {
     }
     throw new EnforceError(`Approval wait timed out after ${config.maxWaitMs}ms with no human resolution — failing closed`, "evaluate");
 }
+/** Evaluate-context keys that v1-verify-permit re-checks against signed
+ *  permit claims, and that therefore must be re-presented at verify. */
+exports.CLOUD_LOCUS_CONTEXT_KEYS = ["aws", "azure"];
 /**
  * Shared HTTP core for permit verification. Sends the permit token AND re-binds
  * the execution context (environment, target, artifact digest) so verification
@@ -320,6 +323,22 @@ async function postVerify(config, permitToken, decision) {
     const payloadHash = decision?.executionHashExpected ?? config.executionPayloadHash;
     if (payloadHash != null)
         bodyObj["payload_hash"] = payloadHash;
+    // Re-present the cloud execution locus. When the evaluate context carried
+    // `aws` or `azure`, v1-evaluate signed those values into the permit
+    // (aws_account_id/aws_region, azure_subscription_id/azure_resource_group)
+    // and v1-verify-permit requires the SAME values under `context` at verify,
+    // treating an absent locus as a mismatch (AWS_LOCUS_MISMATCH /
+    // AZURE_LOCUS_MISMATCH). Before this, no verify body carried `context`, so
+    // every cloud-scoped permit failed verification. Only these two keys are
+    // sent: the rest of the evaluate context is not a verify input.
+    const locus = {};
+    for (const key of exports.CLOUD_LOCUS_CONTEXT_KEYS) {
+        const value = config.context?.[key];
+        if (value != null)
+            locus[key] = value;
+    }
+    if (Object.keys(locus).length > 0)
+        bodyObj["context"] = locus;
     // Fail closed: if the caller declared bindings as required, refuse to verify —
     // BEFORE the network round-trip — when any is absent or empty. A permit gate that
     // silently drops its environment / target / artifact binding is the exact

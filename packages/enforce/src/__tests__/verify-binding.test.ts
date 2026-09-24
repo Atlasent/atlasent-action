@@ -120,3 +120,22 @@ describe("requiredBindingsFor", () => {
     expect(requiredBindingsFor({})).toEqual([]);
   });
 });
+
+describe("verify-permit re-presents the cloud execution locus", () => {
+  beforeEach(() => mockPost.mockReset());
+  afterEach(() => vi.restoreAllMocks());
+
+  it("sends context.azure and context.aws exactly as evaluated, and nothing else from context", async () => {
+    resp(200, { valid: true, outcome: "verified" });
+    const azure = { subscription_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", resource_group: "rg-prod" };
+    const aws = { account_id: "123456789012", region: "us-east-1" };
+    await verifyPermit({ ...BOUND, context: { azure, aws, approvals: 2, change_window: true } }, allow);
+    expect(lastBody().context).toEqual({ azure, aws });
+  });
+
+  it("omits context entirely when no locus was evaluated (byte-identical to before)", async () => {
+    resp(200, { valid: true, outcome: "verified" });
+    await verifyPermit({ ...BOUND, context: { approvals: 2 } }, allow);
+    expect("context" in lastBody()).toBe(false);
+  });
+});

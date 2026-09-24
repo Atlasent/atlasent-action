@@ -4,6 +4,28 @@ All notable changes to `atlasent-action` are documented here.
 
 ## [Unreleased]
 
+### Fixed: AWS/Azure-scoped permits always failed verification
+
+When the evaluate `context` carried `aws` (`account_id`, `region`) or
+`azure` (`subscription_id`, `resource_group`), `v1-evaluate` signed those
+values into the permit, and `v1-verify-permit` requires the same values
+under `context` at verify. It treats an absent value as a mismatch
+(`AWS_LOCUS_MISMATCH` / `AZURE_LOCUS_MISMATCH`). `@atlasent/enforce` never
+sent `context` on the verify request, so every cloud-scoped permit failed
+closed. It now re-presents exactly those two keys and nothing else from the
+context. The fix is in `@atlasent/enforce`, so it reaches both this action's
+`dist/index.js` and the Azure DevOps task's bundle. A permit without an
+AWS/Azure scope sends a verify request byte-identical to before.
+
+### Added: Azure DevOps task binds the Azure scope
+
+`AtlaSentGate` gains `azureSubscriptionId` / `azureResourceGroup` inputs,
+bound into the evaluate context as `context.azure` and re-presented at the
+execution boundary. It also records the run's Azure DevOps metadata as
+`context.azure_devops`, for audit only. The README documents the full
+Azure Production Change Gate pipeline, including the post-deploy
+`v1-azure-effect-verify` call.
+
 ### Removed: `v2-batch` input (#131)
 
 `v2-batch: "true"` routed the `evaluations:` batch-eval path at a

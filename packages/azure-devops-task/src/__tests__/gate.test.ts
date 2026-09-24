@@ -547,3 +547,81 @@ describe("runGate — verifyPermit: true (execution boundary)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Azure Production Change Gate, Slice 2: Azure scope + run metadata
+// ---------------------------------------------------------------------------
+
+describe("Azure scope binding", () => {
+  const SUB = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+
+  it("binds azureSubscriptionId/azureResourceGroup into context.azure, lowercased", () => {
+    const inputs = parseInputs(baseEnv({ azureSubscriptionIdRaw: SUB, azureResourceGroupRaw: "RG-Prod-EastUS" }));
+    expect(inputs.context.azure).toEqual({
+      subscription_id: SUB.toLowerCase(),
+      resource_group: "rg-prod-eastus",
+    });
+  });
+
+  it("requires both halves of the scope", () => {
+    expect(() => parseInputs(baseEnv({ azureSubscriptionIdRaw: SUB }))).toThrow(GateInputError);
+    expect(() => parseInputs(baseEnv({ azureResourceGroupRaw: "rg" }))).toThrow(GateInputError);
+  });
+
+  it("rejects a malformed subscription or resource group", () => {
+    expect(() => parseInputs(baseEnv({ azureSubscriptionIdRaw: "prod", azureResourceGroupRaw: "rg" }))).toThrow(
+      /GUID/,
+    );
+    expect(() => parseInputs(baseEnv({ azureSubscriptionIdRaw: SUB, azureResourceGroupRaw: "rg'x" }))).toThrow(
+      /resource group/,
+    );
+  });
+
+  it("accepts context.azure alone, and refuses one that disagrees with the inputs", () => {
+    const ctx = JSON.stringify({ azure: { subscription_id: SUB, resource_group: "rg-a" } });
+    expect(parseInputs(baseEnv({ contextRaw: ctx })).context.azure).toEqual({
+      subscription_id: SUB.toLowerCase(),
+      resource_group: "rg-a",
+    });
+    expect(() =>
+      parseInputs(baseEnv({ contextRaw: ctx, azureSubscriptionIdRaw: SUB, azureResourceGroupRaw: "rg-b" }))
+    ).toThrow(/disagrees/);
+    expect(() => parseInputs(baseEnv({ contextRaw: JSON.stringify({ azure: { subscription_id: SUB } }) }))).toThrow(
+      GateInputError,
+    );
+  });
+
+  it("leaves context untouched when no Azure scope is given", () => {
+    expect(parseInputs(baseEnv()).context.azure).toBeUndefined();
+  });
+
+  it("records Azure DevOps run metadata as context.azure_devops without overriding a caller's own", () => {
+    const run = {
+      organization_url: "https://dev.azure.com/contoso/",
+      project: "web",
+      pipeline: "deploy-prod",
+      run_id: "4242",
+      repository: "web-app",
+      commit: "abc123",
+    };
+    expect(parseInputs(baseEnv({ run })).context.azure_devops).toEqual(run);
+    expect(parseInputs(baseEnv({ run: { run_id: " ", project: "" } })).context.azure_devops).toBeUndefined();
+    const own = { contextRaw: JSON.stringify({ azure_devops: { note: "caller" } }), run };
+    expect(parseInputs(baseEnv(own)).context.azure_devops).toEqual({ note: "caller" });
+  });
+
+  it("presents the same Azure scope to evaluate and to the execution-boundary verify", async () => {
+    const scope = { azureSubscriptionIdRaw: SUB, azureResourceGroupRaw: "rg-prod" };
+    mockEvaluate.mockResolvedValueOnce(allowDecision());
+    await runGate(parseInputs(baseEnv({ ...scope, modeRaw: "evaluate-only" })), nullLogger);
+    const evaluated = mockEvaluate.mock.calls[mockEvaluate.mock.calls.length - 1][0];
+
+    mockReverifyPermit.mockResolvedValueOnce({ verified: true, outcome: "verified" });
+    await runGate(
+      parseInputs(baseEnv({ ...scope, verifyPermitRaw: "true", permitTokenRaw: "pt-1" })),
+      nullLogger,
+    );
+    const reverified = mockReverifyPermit.mock.calls[mockReverifyPermit.mock.calls.length - 1][0];
+    expect(reverified.context.azure).toEqual(evaluated.context.azure);
+  });
+});
