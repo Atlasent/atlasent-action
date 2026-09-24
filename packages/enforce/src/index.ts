@@ -542,6 +542,10 @@ export async function waitForApprovalResolution(
   );
 }
 
+/** Evaluate-context keys that v1-verify-permit re-checks against signed
+ *  permit claims, and that therefore must be re-presented at verify. */
+export const CLOUD_LOCUS_CONTEXT_KEYS = ["aws", "azure"] as const;
+
 // ---------------------------------------------------------------------------
 // Step 3 — verifyPermit (calls /v1-verify-permit, fail-closed)
 //
@@ -586,6 +590,21 @@ async function postVerify(
   // artifact the permit was actually issued for — not one re-supplied at verify time.
   const payloadHash = decision?.executionHashExpected ?? config.executionPayloadHash;
   if (payloadHash != null) bodyObj["payload_hash"] = payloadHash;
+
+  // Re-present the cloud execution locus. When the evaluate context carried
+  // `aws` or `azure`, v1-evaluate signed those values into the permit
+  // (aws_account_id/aws_region, azure_subscription_id/azure_resource_group)
+  // and v1-verify-permit requires the SAME values under `context` at verify,
+  // treating an absent locus as a mismatch (AWS_LOCUS_MISMATCH /
+  // AZURE_LOCUS_MISMATCH). Before this, no verify body carried `context`, so
+  // every cloud-scoped permit failed verification. Only these two keys are
+  // sent: the rest of the evaluate context is not a verify input.
+  const locus: Record<string, unknown> = {};
+  for (const key of CLOUD_LOCUS_CONTEXT_KEYS) {
+    const value = config.context?.[key];
+    if (value != null) locus[key] = value;
+  }
+  if (Object.keys(locus).length > 0) bodyObj["context"] = locus;
 
   // Fail closed: if the caller declared bindings as required, refuse to verify —
   // BEFORE the network round-trip — when any is absent or empty. A permit gate that

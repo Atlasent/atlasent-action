@@ -86,7 +86,9 @@ does with `secrets.*` — an explicit `env:` block on the step is required):
 | `actor` | `Build.RequestedFor` / `Release.RequestedFor` / `unknown` | Triggering identity. |
 | `targetId` | — | Target resource identifier. |
 | `environment` | auto | When blank: inferred from the `ATLASENT_API_KEY` prefix (`ask_test_`/`ask_live_`), else from `Build.SourceBranch` (`main`/`master` → `live`, otherwise `test`) — the same heuristic the GitHub Action applies to `github.ref`. |
-| `context` | `{}` | JSON object of additional context passed to the evaluator. |
+| `azureSubscriptionId` | — | The Azure subscription this step will change. Give it together with `azureResourceGroup`. Bound into the evaluate context as `context.azure`, signed into the permit, and re-checked when the permit is verified — so give the **same values on the `verifyPermit: true` step**. |
+| `azureResourceGroup` | — | The resource group this step will change. See [Protecting an Azure deployment](#protecting-an-azure-deployment). |
+| `context` | `{}` | JSON object of additional context passed to the evaluator. | The task also records this run's Azure DevOps metadata (`System.CollectionUri`, `System.TeamProject`, `Build.DefinitionName`, `Build.BuildId`, `Build.Repository.Name`, `Build.SourceVersion`) as `context.azure_devops`, unless `context` already sets that key. That metadata is the pipeline's own description of itself: it is recorded for audit and correlation and grants nothing.
 | `approvalsFrom` | `none` | `none` or `pr-reviews`. **`pr-reviews` is accepted but not yet implemented** — Azure Repos pull request reviews are not auto-derived in this v1 task; a warning is logged and the call proceeds as `none`. Pass `context: '{"approvals": N}'` explicitly if your policy requires an approval count. |
 | `waitForApproval` | `false` | Set `true` to pause on hold/escalate and resume once a human resolves it, instead of failing immediately. Ignored in `mode: evaluate-only`. |
 | `maxWaitMinutes` | `30` | Bound on `waitForApproval`'s poll window; exceeding it fails closed. |
@@ -201,6 +203,99 @@ A pipeline that needs that guarantee today should independently re-hash its
 downloaded build artifact and compare it before calling `verifyPermit`, the
 same "the digest binds identity, but moving and re-checking the bytes is the
 caller's job" pattern the top-level README documents for the GitHub Action.
+
+## Protecting an Azure deployment
+
+The Azure Production Change Gate
+([plan](https://github.com/Atlasent/atlasent-api/blob/main/docs/design/AZURE_PRODUCTION_CHANGE_GATE_PLAN.md))
+uses three pieces in one pipeline:
+
+1. **Before the change** — this task in `mode: evaluate-only` with
+   `azureSubscriptionId` / `azureResourceGroup`. The Azure scope is signed
+   into the permit.
+2. **At the change** — this task with `verifyPermit: true` and the **same**
+   Azure scope, immediately before the deploy. A permit issued for one
+   subscription or resource group fails closed against another
+   (`AZURE_LOCUS_MISMATCH`).
+3. **After the change** — a call to `v1-azure-effect-verify` with the
+   decision's `evaluationId` and the Azure operation's correlation id.
+   AtlaSent reads Azure's Activity Log itself and records `verified`,
+   `mismatch` or `unknown`. This requires the org's Azure connection for the
+   subscription to be `connected` with this resource group selected.
+
+```yaml
+variables:
+  subscriptionId: 00000000-0000-0000-0000-000000000000
+  resourceGroup: rg-prod-eastus
+
+stages:
+  - stage: Authorize
+    jobs:
+      - job: Gate
+        steps:
+          - task: AtlaSentGate@1
+            name: gate
+            env:
+              ATLASENT_API_KEY: $(AtlasentApiKey)
+              ATLASENT_BASE_URL: $(AtlasentBaseUrl)
+            inputs:
+              action: production.deploy
+              targetId: web-app
+              environment: production
+              mode: evaluate-only
+              azureSubscriptionId: $(subscriptionId)
+              azureResourceGroup: $(resourceGroup)
+
+  - stage: Deploy
+    dependsOn: Authorize
+    jobs:
+      - job: DeployJob
+        variables:
+          permitToken: $[ stageDependencies.Authorize.Gate.outputs['gate.permitToken'] ]
+          evaluationId: $[ stageDependencies.Authorize.Gate.outputs['gate.evaluationId'] ]
+        steps:
+          - task: AtlaSentGate@1
+            name: verify
+            env:
+              ATLASENT_API_KEY: $(AtlasentApiKey)
+              ATLASENT_BASE_URL: $(AtlasentBaseUrl)
+            inputs:
+              action: production.deploy
+              targetId: web-app
+              environment: production
+              verifyPermit: true
+              permitToken: $(permitToken)
+              azureSubscriptionId: $(subscriptionId)
+              azureResourceGroup: $(resourceGroup)
+
+          - task: AzureCLI@2
+            name: deploy
+            condition: eq(variables['verify.verified'], 'true')
+            inputs:
+              azureSubscription: prod-service-connection
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                corr=$(az deployment group create -g "$(resourceGroup)" \
+                  --template-file main.bicep --query properties.correlationId -o tsv)
+                echo "##vso[task.setvariable variable=correlationId;isOutput=true]$corr"
+
+          - bash: |
+              set -euo pipefail
+              # Activity Log delivery can lag by minutes; an `unknown` result
+              # is recorded and can be re-requested, it is never treated as success.
+              curl -sS --fail-with-body -X POST "$ATLASENT_BASE_URL/v1-azure-effect-verify" \
+                -H "Authorization: Bearer $ATLASENT_API_KEY" -H "Content-Type: application/json" \
+                -d "{\"request_id\": \"$(evaluationId)\", \"operation_name\": \"Microsoft.Resources/deployments/write\", \"correlation_id\": \"$(deploy.correlationId)\"}"
+            displayName: Verify the effect against Azure's Activity Log
+            env:
+              ATLASENT_API_KEY: $(AtlasentApiKey)
+              ATLASENT_BASE_URL: $(AtlasentBaseUrl)
+```
+
+The effect check is evidence, recorded after the fact. It does not undo a
+change; what stops an unauthorized change is steps 1–2.
 
 ## Building and packaging locally
 

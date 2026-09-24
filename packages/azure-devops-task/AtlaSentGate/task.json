@@ -9,7 +9,7 @@
   "author": "AtlaSent Systems, Inc.",
   "version": {
     "Major": 1,
-    "Minor": 0,
+    "Minor": 1,
     "Patch": 0
   },
   "instanceNameFormat": "AtlaSent Gate: $(action)",
@@ -73,6 +73,20 @@
       "label": "Environment",
       "required": false,
       "helpMarkDown": "Deployment environment passed to the evaluator. When left blank, it is inferred from the ATLASENT_API_KEY prefix (ask_test_/ask_live_) or, failing that, from Build.SourceBranch (main/master => live, otherwise test)."
+    },
+    {
+      "name": "azureSubscriptionId",
+      "type": "string",
+      "label": "Azure subscription ID",
+      "required": false,
+      "helpMarkDown": "The Azure subscription this step will change. Give it together with azureResourceGroup. It is signed into the permit, so the same values must be given again on the verifyPermit step, and AtlaSent can later verify the change against Azure's Activity Log."
+    },
+    {
+      "name": "azureResourceGroup",
+      "type": "string",
+      "label": "Azure resource group",
+      "required": false,
+      "helpMarkDown": "The resource group this step will change. Must be one of the production resource groups selected on the org's Azure connection for the Activity Log check to apply."
     },
     {
       "name": "context",

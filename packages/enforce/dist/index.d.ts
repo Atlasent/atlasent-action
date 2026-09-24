@@ -235,6 +235,9 @@ export interface ApprovalResolution {
     permitToken?: string;
 }
 export declare function waitForApprovalResolution(config: WaitForApprovalConfig): Promise<ApprovalResolution>;
+/** Evaluate-context keys that v1-verify-permit re-checks against signed
+ *  permit claims, and that therefore must be re-presented at verify. */
+export declare const CLOUD_LOCUS_CONTEXT_KEYS: readonly ["aws", "azure"];
 /**
  * Derive the `requiredBindings` set from the bindings actually provided for a
  * decision/item — "re-present at verify exactly what was bound at evaluate."

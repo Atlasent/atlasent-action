@@ -105,7 +105,7 @@ var require_dist = __commonJS({
   "packages/enforce/dist/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.EnforceError = void 0;
+    exports2.CLOUD_LOCUS_CONTEXT_KEYS = exports2.EnforceError = void 0;
     exports2.evaluate = evaluate2;
     exports2.verify = verify2;
     exports2.waitForApprovalResolution = waitForApprovalResolution3;
@@ -304,6 +304,7 @@ var require_dist = __commonJS({
       }
       throw new EnforceError2(`Approval wait timed out after ${config.maxWaitMs}ms with no human resolution \u2014 failing closed`, "evaluate");
     }
+    exports2.CLOUD_LOCUS_CONTEXT_KEYS = ["aws", "azure"];
     async function postVerify(config, permitToken, decision) {
       const apiUrl = (config.apiUrl ?? DEFAULT_API_URL).replace(/\/$/, "");
       const bodyObj = {
@@ -318,6 +319,14 @@ var require_dist = __commonJS({
       const payloadHash = decision?.executionHashExpected ?? config.executionPayloadHash;
       if (payloadHash != null)
         bodyObj["payload_hash"] = payloadHash;
+      const locus = {};
+      for (const key of exports2.CLOUD_LOCUS_CONTEXT_KEYS) {
+        const value = config.context?.[key];
+        if (value != null)
+          locus[key] = value;
+      }
+      if (Object.keys(locus).length > 0)
+        bodyObj["context"] = locus;
       const missing = (config.requiredBindings ?? []).filter((b) => bodyObj[b] == null || bodyObj[b] === "");
       if (missing.length > 0) {
         throw new EnforceError2(`verify-permit refused: required binding(s) absent: ${missing.join(", ")}`, "verify-permit", decision, { outcome: "invalid", verifyErrorCode: "MISSING_BINDING" });

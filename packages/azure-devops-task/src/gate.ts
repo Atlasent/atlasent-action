@@ -123,6 +123,87 @@ export interface RawGateEnv {
   /** Build.SourceBranch — used for the same "main => live" auto-environment
    *  heuristic atlasent-action's GitHub Action applies to `github.ref`. */
   sourceBranch: string | undefined;
+  /** Azure scope this step will change. Both or neither. Bound into the
+   *  evaluate context as `context.azure`, which v1-evaluate signs into the
+   *  permit and v1-verify-permit re-checks at the execution boundary. */
+  azureSubscriptionIdRaw?: string | undefined;
+  azureResourceGroupRaw?: string | undefined;
+  /** Azure DevOps predefined variables describing this run. Recorded as
+   *  `context.azure_devops` for audit and later correlation; they are the
+   *  pipeline's own claims about itself, never authority. */
+  run?: Partial<Record<keyof AzureDevOpsRunContext, string | undefined>>;
+}
+
+/** Run metadata recorded under `context.azure_devops`. */
+export interface AzureDevOpsRunContext {
+  organization_url: string;
+  project: string;
+  pipeline: string;
+  run_id: string;
+  repository: string;
+  commit: string;
+}
+
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RESOURCE_GROUP_RE = /^[-\w.()]{1,90}$/;
+
+/**
+ * Resolve the Azure locus from the dedicated inputs and/or `context.azure`.
+ * The inputs are the supported path; a `context.azure` given in the JSON
+ * context must agree with them. Values are normalized to lowercase so the
+ * same scope is presented identically at evaluate and at verify.
+ */
+export function resolveAzureLocus(
+  subscriptionRaw: string | undefined,
+  resourceGroupRaw: string | undefined,
+  context: Record<string, unknown>,
+): { subscription_id: string; resource_group: string } | undefined {
+  let sub = (subscriptionRaw ?? "").trim();
+  let rg = (resourceGroupRaw ?? "").trim();
+
+  let fromContext: Record<string, unknown> | undefined;
+  if (context["azure"] !== undefined) {
+    const c = context["azure"];
+    if (!c || typeof c !== "object" || Array.isArray(c)) {
+      throw new GateInputError("`context.azure` must be an object with subscription_id and resource_group");
+    }
+    fromContext = c as Record<string, unknown>;
+  }
+
+  if (!sub && !rg) {
+    if (!fromContext) return undefined;
+    sub = typeof fromContext.subscription_id === "string" ? fromContext.subscription_id.trim() : "";
+    rg = typeof fromContext.resource_group === "string" ? fromContext.resource_group.trim() : "";
+    if (!sub || !rg) {
+      throw new GateInputError("`context.azure` must carry both subscription_id and resource_group");
+    }
+  } else if (!sub || !rg) {
+    throw new GateInputError("azureSubscriptionId and azureResourceGroup must be given together");
+  }
+
+  if (!GUID_RE.test(sub)) throw new GateInputError("azureSubscriptionId must be a subscription GUID");
+  if (!RESOURCE_GROUP_RE.test(rg) || rg.endsWith(".")) {
+    throw new GateInputError("azureResourceGroup is not a valid Azure resource group name");
+  }
+  const locus = { subscription_id: sub.toLowerCase(), resource_group: rg.toLowerCase() };
+
+  if (
+    fromContext &&
+    (String(fromContext.subscription_id ?? "").trim().toLowerCase() !== locus.subscription_id ||
+      String(fromContext.resource_group ?? "").trim().toLowerCase() !== locus.resource_group)
+  ) {
+    throw new GateInputError("`context.azure` disagrees with azureSubscriptionId/azureResourceGroup");
+  }
+  return locus;
+}
+
+function runContext(run: RawGateEnv["run"]): Partial<AzureDevOpsRunContext> {
+  const out: Partial<AzureDevOpsRunContext> = {};
+  for (const [k, v] of Object.entries(run ?? {})) {
+    const t = (v ?? "").trim();
+    if (t) out[k as keyof AzureDevOpsRunContext] = t;
+  }
+  return out;
 }
 
 export class GateInputError extends Error {}
@@ -188,6 +269,13 @@ export function parseInputs(env: RawGateEnv): GateInputs {
       throw new GateInputError("`context` input must be a JSON object");
     }
     context = parsed as Record<string, unknown>;
+  }
+
+  const azure = resolveAzureLocus(env.azureSubscriptionIdRaw, env.azureResourceGroupRaw, context);
+  if (azure) context = { ...context, azure };
+  const run = runContext(env.run);
+  if (Object.keys(run).length > 0 && context["azure_devops"] === undefined) {
+    context = { ...context, azure_devops: run };
   }
 
   const approvalsFromRaw = (env.approvalsFromRaw ?? "none").trim().toLowerCase();

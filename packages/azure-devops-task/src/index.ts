@@ -85,6 +85,16 @@ async function main(): Promise<void> {
     buildRequestedFor: tl.getVariable("Build.RequestedFor"),
     releaseRequestedFor: tl.getVariable("Release.RequestedFor"),
     sourceBranch: tl.getVariable("Build.SourceBranch"),
+    azureSubscriptionIdRaw: tl.getInput("azureSubscriptionId", false),
+    azureResourceGroupRaw: tl.getInput("azureResourceGroup", false),
+    run: {
+      organization_url: tl.getVariable("System.CollectionUri"),
+      project: tl.getVariable("System.TeamProject"),
+      pipeline: tl.getVariable("Build.DefinitionName"),
+      run_id: tl.getVariable("Build.BuildId"),
+      repository: tl.getVariable("Build.Repository.Name"),
+      commit: tl.getVariable("Build.SourceVersion"),
+    },
   };
 
   let inputs;
