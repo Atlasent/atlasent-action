@@ -4,6 +4,18 @@ All notable changes to `atlasent-action` are documented here.
 
 ## [Unreleased]
 
+### Added: Azure DevOps task binds the ARM deployment (task 1.2.0)
+
+New optional `azureDeploymentName` input (or `context.azure.deployment_name`;
+if both are given they must agree). It is sent at evaluate as
+`context.azure.deployment_name`, stored with the decision, and
+`v1-azure-effect-verify` then accepts only
+`Microsoft.Resources/deployments/write` on exactly that deployment
+(atlasent-api#3640). Also fixes the task silently dropping a
+`deployment_name` placed in the JSON context when it rebuilt `context.azure`.
+A malformed name, or one given without a subscription and resource group,
+fails the step.
+
 ### Fixed: AWS/Azure-scoped permits always failed verification
 
 When the evaluate `context` carried `aws` (`account_id`, `region`) or

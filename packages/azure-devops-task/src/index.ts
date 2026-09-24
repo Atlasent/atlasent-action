@@ -87,6 +87,7 @@ async function main(): Promise<void> {
     sourceBranch: tl.getVariable("Build.SourceBranch"),
     azureSubscriptionIdRaw: tl.getInput("azureSubscriptionId", false),
     azureResourceGroupRaw: tl.getInput("azureResourceGroup", false),
+    azureDeploymentNameRaw: tl.getInput("azureDeploymentName", false),
     run: {
       organization_url: tl.getVariable("System.CollectionUri"),
       project: tl.getVariable("System.TeamProject"),

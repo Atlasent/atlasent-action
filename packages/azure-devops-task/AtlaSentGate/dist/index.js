@@ -7755,7 +7755,8 @@ var tl = __toESM(require_task());
 var import_enforce = __toESM(require_dist());
 var GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var RESOURCE_GROUP_RE = /^[-\w.()]{1,90}$/;
-function resolveAzureLocus(subscriptionRaw, resourceGroupRaw, context) {
+var DEPLOYMENT_NAME_RE = /^[-\w.()]{1,64}$/;
+function resolveAzureLocus(subscriptionRaw, resourceGroupRaw, context, deploymentNameRaw) {
   let sub = (subscriptionRaw ?? "").trim();
   let rg = (resourceGroupRaw ?? "").trim();
   let fromContext;
@@ -7767,8 +7768,12 @@ function resolveAzureLocus(subscriptionRaw, resourceGroupRaw, context) {
     fromContext = c;
   }
   if (!sub && !rg) {
-    if (!fromContext)
+    if (!fromContext) {
+      if ((deploymentNameRaw ?? "").trim()) {
+        throw new GateInputError("azureDeploymentName requires azureSubscriptionId and azureResourceGroup");
+      }
       return void 0;
+    }
     sub = typeof fromContext.subscription_id === "string" ? fromContext.subscription_id.trim() : "";
     rg = typeof fromContext.resource_group === "string" ? fromContext.resource_group.trim() : "";
     if (!sub || !rg) {
@@ -7785,6 +7790,22 @@ function resolveAzureLocus(subscriptionRaw, resourceGroupRaw, context) {
   const locus = { subscription_id: sub.toLowerCase(), resource_group: rg.toLowerCase() };
   if (fromContext && (String(fromContext.subscription_id ?? "").trim().toLowerCase() !== locus.subscription_id || String(fromContext.resource_group ?? "").trim().toLowerCase() !== locus.resource_group)) {
     throw new GateInputError("`context.azure` disagrees with azureSubscriptionId/azureResourceGroup");
+  }
+  const fromInput = (deploymentNameRaw ?? "").trim();
+  const ctxName = fromContext?.deployment_name;
+  if (ctxName !== void 0 && typeof ctxName !== "string") {
+    throw new GateInputError("`context.azure.deployment_name` must be a string");
+  }
+  const fromCtx = (ctxName ?? "").trim();
+  if (fromInput && fromCtx && fromInput.toLowerCase() !== fromCtx.toLowerCase()) {
+    throw new GateInputError("`context.azure.deployment_name` disagrees with azureDeploymentName");
+  }
+  const deploymentName = fromInput || fromCtx;
+  if (deploymentName) {
+    if (!DEPLOYMENT_NAME_RE.test(deploymentName)) {
+      throw new GateInputError("azureDeploymentName is not a valid ARM deployment name (1-64 of letters, digits, _ - . ( ))");
+    }
+    return { ...locus, deployment_name: deploymentName };
   }
   return locus;
 }
@@ -7837,7 +7858,12 @@ function parseInputs(env) {
     }
     context = parsed;
   }
-  const azure = resolveAzureLocus(env.azureSubscriptionIdRaw, env.azureResourceGroupRaw, context);
+  const azure = resolveAzureLocus(
+    env.azureSubscriptionIdRaw,
+    env.azureResourceGroupRaw,
+    context,
+    env.azureDeploymentNameRaw
+  );
   if (azure)
     context = { ...context, azure };
   const run = runContext(env.run);
@@ -8101,6 +8127,7 @@ async function main() {
     sourceBranch: tl.getVariable("Build.SourceBranch"),
     azureSubscriptionIdRaw: tl.getInput("azureSubscriptionId", false),
     azureResourceGroupRaw: tl.getInput("azureResourceGroup", false),
+    azureDeploymentNameRaw: tl.getInput("azureDeploymentName", false),
     run: {
       organization_url: tl.getVariable("System.CollectionUri"),
       project: tl.getVariable("System.TeamProject"),
