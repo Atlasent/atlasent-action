@@ -748,6 +748,29 @@ async function runVerifyPermitStep(apiKey: string, apiUrl: string): Promise<void
   const gh = getGitHubContext();
   const environment = resolveEnvironment(getInput("environment"), gh.ref, apiKey);
 
+  // The cloud execution locus (context.aws / context.azure) signed into the
+  // permit at evaluate must be presented again here: v1-verify-permit treats
+  // an absent locus as AWS_/AZURE_LOCUS_MISMATCH. @atlasent/enforce sends only
+  // those two keys from config.context, so pass the same `context` input the
+  // evaluate step used. Unparseable JSON fails closed rather than silently
+  // verifying without the locus.
+  let boundaryContext: Record<string, unknown> | undefined;
+  const rawContext = getInput("context");
+  if (rawContext) {
+    try {
+      const parsed: unknown = JSON.parse(rawContext);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+      boundaryContext = parsed as Record<string, unknown>;
+    } catch {
+      setOutput("decision", "deny");
+      setOutput("verified", "false");
+      setOutput("verify-outcome", "invalid");
+      setOutput("verify-error-code", "INVALID_CONTEXT");
+      setFailed("Deploy blocked at execution boundary: the 'context' input is not a JSON object.");
+      return;
+    }
+  }
+
   // A prior evaluate-only step's resolved-actor output, passed through
   // unchanged, is authoritative when present for an
   // OPTIONAL_VERIFIED_ACTOR_ACTIONS type: it's the exact actor that step
@@ -831,6 +854,7 @@ async function runVerifyPermitStep(apiKey: string, apiUrl: string): Promise<void
     environment,
     targetId,
     executionPayloadHash: verificationPayloadHash,
+    ...(boundaryContext ? { context: boundaryContext } : {}),
     // Boundary re-verify must re-present every binding it was given, or fail
     // closed (MISSING_BINDING) — never a silently-unbound boundary verify.
     requiredBindings: requiredBindingsFor({
