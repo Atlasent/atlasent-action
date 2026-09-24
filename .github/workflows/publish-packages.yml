@@ -9,9 +9,12 @@
 # workflow manually with `publish: true`. The tag/dispatch is the only thing
 # that publishes — normal pushes never reach npm.
 #
-# Setup required once: add an `NPM_TOKEN` repo secret (an npm automation token
-# with publish rights to the @atlasent scope). Provenance uses the workflow's
-# OIDC token (id-token: write) — no extra secret needed.
+# Setup required once per package: npm trusted publishing (OIDC) — no
+# NPM_TOKEN. On npmjs.com -> @atlasent/enforce and @atlasent/action ->
+# Settings -> Trusted Publisher -> GitHub Actions: organization `Atlasent`,
+# repository `atlasent-action`, workflow `publish-packages.yml`, no
+# environment, "Allow npm publish" checked. npm authenticates the workflow's
+# id-token (id-token: write), which also signs the provenance attestation.
 #
 # Order matters: @atlasent/action depends on @atlasent/enforce, so enforce is
 # published first. Bump both package versions to the same number before tagging.
@@ -156,14 +159,15 @@ jobs:
       # explicit `skip_gate` bypass) in addition to the pre-existing
       # publish-intent resolution above. Gate error/deny/timeout means these
       # steps do not run.
+      # Trusted publishing requires npm >= 11.5.1 (Node 20 ships npm 10.x).
+      - name: Upgrade npm for trusted publishing
+        if: ${{ steps.resolve.outputs.publish == 'true' && (needs.gate.outputs.verified == 'true' || inputs.skip_gate) }}
+        run: npm install -g npm@^11.5.1 && npm --version
+
       - name: Publish @atlasent/enforce
         if: ${{ steps.resolve.outputs.publish == 'true' && (needs.gate.outputs.verified == 'true' || inputs.skip_gate) }}
         run: npm publish -w @atlasent/enforce --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @atlasent/action
         if: ${{ steps.resolve.outputs.publish == 'true' && (needs.gate.outputs.verified == 'true' || inputs.skip_gate) }}
         run: npm publish -w @atlasent/action --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
