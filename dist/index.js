@@ -3804,6 +3804,23 @@ async function runVerifyPermitStep(apiKey, apiUrl) {
   const runtimeExecutionHash = getInput("execution-hash") || void 0;
   const gh = getGitHubContext();
   const environment = resolveEnvironment(getInput("environment"), gh.ref, apiKey);
+  let boundaryContext;
+  const rawContext = getInput("context");
+  if (rawContext) {
+    try {
+      const parsed = JSON.parse(rawContext);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        throw new Error("not an object");
+      boundaryContext = parsed;
+    } catch {
+      setOutput("decision", "deny");
+      setOutput("verified", "false");
+      setOutput("verify-outcome", "invalid");
+      setOutput("verify-error-code", "INVALID_CONTEXT");
+      setFailed("Deploy blocked at execution boundary: the 'context' input is not a JSON object.");
+      return;
+    }
+  }
   const carriedActor = OPTIONAL_VERIFIED_ACTOR_ACTIONS.has(actionType) ? getInput("resolved-actor") || void 0 : void 0;
   let actorId;
   if (carriedActor) {
@@ -3850,6 +3867,7 @@ async function runVerifyPermitStep(apiKey, apiUrl) {
     environment,
     targetId,
     executionPayloadHash: verificationPayloadHash,
+    ...boundaryContext ? { context: boundaryContext } : {},
     // Boundary re-verify must re-present every binding it was given, or fail
     // closed (MISSING_BINDING) — never a silently-unbound boundary verify.
     requiredBindings: (0, import_enforce4.requiredBindingsFor)({

@@ -4,6 +4,16 @@ All notable changes to `atlasent-action` are documented here.
 
 ## [Unreleased]
 
+### Fixed: `verify-permit: 'true'` dropped the `context` input
+
+The execution-boundary step (`verify-permit: 'true'`) ignored `context`, so a
+permit issued with a cloud locus (`context.azure` / `context.aws`) in an
+`evaluate-only` job could never be re-verified in the job that runs the
+change: the runtime saw no locus and failed closed with
+`AZURE_LOCUS_MISMATCH`. The step now re-presents `context` exactly as given.
+A `context` that is not a JSON object fails the step (`INVALID_CONTEXT`)
+before any verify call.
+
 ### Added: Azure DevOps task binds the ARM deployment (task 1.2.0)
 
 New optional `azureDeploymentName` input (or `context.azure.deployment_name`;

@@ -987,6 +987,38 @@ describe("verify-only execution boundary", () => {
     });
   });
 
+  it("re-presents the context input so an Azure-scoped permit keeps its locus at verify", async () => {
+    setApiKey();
+    setInput("verify-permit", "true");
+    setInput("permit-token", "pt-unconsumed");
+    setInput("action", "production.deploy");
+    setInput("environment", "production");
+    setInput("execution-hash", "runtime-derived-hash");
+    const azure = { subscription_id: "75616e70-6169-4bbc-bbc3-0f1ab5757d44", resource_group: "rg-test", deployment_name: "web-1" };
+    setInput("context", JSON.stringify({ azure, repo: "x/y" }));
+    mockReverifyPermit.mockResolvedValueOnce({ verified: true, outcome: "verified" });
+
+    await run();
+
+    const config = mockReverifyPermit.mock.calls[0][0] as { context?: Record<string, unknown> };
+    expect(config.context?.azure).toEqual(azure);
+  });
+
+  it("fails closed at the boundary when the context input is not a JSON object", async () => {
+    setApiKey();
+    setInput("verify-permit", "true");
+    setInput("permit-token", "pt-unconsumed");
+    setInput("action", "production.deploy");
+    setInput("environment", "production");
+    setInput("execution-hash", "runtime-derived-hash");
+    setInput("context", "{not json");
+
+    await expect(run()).rejects.toBeInstanceOf(ProcessExitError);
+
+    expect(mockReverifyPermit).not.toHaveBeenCalled();
+    expect(readOutputs(outputFile)).toMatchObject({ verified: "false", "verify-error-code": "INVALID_CONTEXT" });
+  });
+
   it("uses the carried resolved-actor input for package.release instead of independently re-resolving one", async () => {
     setApiKey();
     setInput("verify-permit", "true");
