@@ -4,13 +4,15 @@ All notable changes to `atlasent-action` are documented here.
 
 ## [Unreleased]
 
-### `@atlasent/enforce` and `@atlasent/action` 2.0.1 (npm)
+### `@atlasent/enforce` and `@atlasent/action` 2.1.0 (npm)
 
-Republish with repository/homepage/bugs links pointing at the Atlasent GitHub
-org. The version bump itself makes no code changes. npm's latest
-`@atlasent/enforce` is still 2.0.0, so 2.0.1 is also the first npm release of
-the `@atlasent/enforce` changes merged since then (see the entries below).
-The `@atlasent/action` build output is unchanged from 2.0.0.
+First npm release of `@atlasent/enforce` since 2.0.0. It ships every
+`@atlasent/enforce` change merged since then (the Added/Fixed entries
+below), which add new optional evaluate inputs and fix cloud-scoped permit
+verification, hence a minor rather than a patch version. Both packages also
+carry repository/homepage/bugs links pointing at the Atlasent GitHub org.
+`@atlasent/action`'s build output is unchanged from 2.0.0; it moves to 2.1.0
+because both packages publish together from one `npm-v` tag.
 
 ### Fixed: `verify-permit: 'true'` dropped the `context` input
 
