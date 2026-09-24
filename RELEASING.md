@@ -13,30 +13,24 @@ the bundle with cosign, **creates the GitHub Release**, and **moves the floating
 
 - `dist/index.js` is committed and current (`npm run build` produces no diff).
   The release **fails** if it has drifted — build and commit it before tagging.
-- Repo secrets: `ATLASENT_API_KEY`, `ATLASENT_BASE_URL` (for the release gate on
-  non-bootstrap releases).
+- Repo secrets: `ATLASENT_API_KEY`, `ATLASENT_BASE_URL` (for the release gate).
 
-## One-time bootstrap publish (first `v1.3.0`)
+## No manual publish path
 
-There is a chicken-and-egg: the release gate (`uses: ./` → `production.release`)
-can't be satisfied before any `v1` exists. Bootstrap once, gate-exempt:
+The one-time `bootstrap` input (skip the release gate to publish the first `v1`)
+has been **removed**: `v1` exists, and a gate-skip input is a standing way
+around the gate. A manual run of `Release` is now a dry run: it builds and
+verifies `dist/index.js` and does nothing else. It does not gate, sign, create a
+Release or move `v1`. The org's `package.release` policy (v7) likewise only
+authorizes `Release` on a `push` of a `vX.Y.Z` tag.
 
-```sh
-# 1. Tag the release commit (must have a current committed dist/index.js).
-git tag v1.3.0
-git push origin v1.3.0
+The same applies to `Publish packages` (the npm packages): its `publish` and
+`skip_gate` inputs are gone, a manual run is build + test only, and publishing
+requires pushing an `npm-v<semver>` tag.
 
-# 2. Run the Release workflow manually with the gate skipped:
-gh workflow run release.yml -f ref=v1.3.0 -f bootstrap=true
-```
+## Releasing
 
-This builds + signs, creates the `v1.3.0` GitHub Release, and points `v1` at it.
-Confirm the Marketplace listing, then every customer `@v1` reference resolves to
-this build (including the PR-review approvals reader).
-
-## Steady-state releases (after bootstrap)
-
-Just push a tag — the gate runs (dogfood), no `bootstrap` flag:
+Push a tag. The gate runs (dogfood) on every release:
 
 ```sh
 git tag v1.4.0
