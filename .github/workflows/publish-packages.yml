@@ -5,9 +5,10 @@
 # bundle via release.yml). They publish to npm so SDK/example consumers can
 # `npm install @atlasent/action`.
 #
-# Trigger: push a tag matching `npm-v<semver>` (e.g. npm-v2.0.1), or run the
-# workflow manually with `publish: true`. The tag/dispatch is the only thing
-# that publishes — normal pushes never reach npm.
+# Trigger: push a tag matching `npm-v<semver>` (e.g. npm-v2.0.1). A tag push is
+# the only thing that publishes. A manual run is a dry run (build + test only):
+# the org's package.release policy only authorizes a `push` of an npm-v tag for
+# this workflow, and there is no gate-skip input.
 #
 # Setup required once per package: npm trusted publishing (OIDC) — no
 # NPM_TOKEN. On npmjs.com -> @atlasent/enforce and @atlasent/action ->
@@ -25,24 +26,11 @@ on:
   push:
     tags:
       - 'npm-v*.*.*'
+  # Dry run only: build + test, never publishes and never calls the gate.
+  # The former `publish` and `skip_gate` inputs are gone. `skip_gate` let a
+  # manual run publish to npm with no authorization at all, which is exactly
+  # what this gate exists to prevent.
   workflow_dispatch:
-    inputs:
-      publish:
-        description: 'Publish to npm (false = build + test only, dry run)'
-        type: boolean
-        default: false
-      skip_gate:
-        # EMERGENCY ONLY. Bypasses the AtlaSent publish gate for this manual
-        # run. Unreachable on tag-triggered runs (no `inputs` context there)
-        # — only a manual dispatch can set it. Every use is logged loudly.
-        # Mirrors the pattern already shipped for this repo's other publish
-        # surfaces' peers (e.g. atlasent-control-plane's
-        # publish-marketplace-images.yml, atlasent-keys'
-        # publish-trust-root.yml).
-        description: 'EMERGENCY: bypass the AtlaSent publish gate for this manual run'
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
@@ -78,16 +66,21 @@ jobs:
   # higher-blast-radius, org-wide trust operation than an ordinary version
   # release.
   #
-  # KNOWN OPEN ISSUE (same as release.yml, not re-litigated here): the
-  # `package.release` policy bundle's release-manager allow-list is still a
-  # placeholder pending a founder decision (see release.yml's gate comment
-  # for the full write-up) — until that lands, this gate denies every real
-  # (non-bootstrap, non-skip_gate) run by design, same as release.yml today.
+  # POLICY: the org's `package.release` bundle had no template for this
+  # workflow before v7, so every npm-v tag push was denied (NO_TEMPLATE_MATCH).
+  # v7 (atlasent-api docs/runbooks/PACKAGE_RELEASE_V7_APPLY.md) adds
+  # `package_release_atlasent_action_npm_packages_tag_release_manager`: this
+  # repo + `Publish packages` + `push` + `refs/tags/npm-v<semver>` +
+  # artifact `npm-packages`. Keep the workflow name and the artifact string in
+  # sync with that template, or the gate goes back to a guaranteed deny.
   # Requires an `ATLASENT_API_KEY` secret (scopes `evaluate:write` +
   # `verify:execute`); until provisioned/activated, every run — including
   # ordinary tag pushes — fails at the gate step.
   gate:
     name: AtlaSent publish gate
+    # Tag pushes only. A dispatch is a dry run and must not ask for a permit
+    # it will never use (and the policy would deny it anyway).
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -99,7 +92,6 @@ jobs:
 
       - name: AtlaSent publish gate
         id: atlasent_gate
-        if: ${{ !inputs.skip_gate }}
         uses: ./
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
@@ -113,18 +105,16 @@ jobs:
           context: '{"ref": "${{ github.ref }}", "repo": "${{ github.repository }}", "artifact": "npm-packages"}'
 
       - name: Surface gate outcome (deny is loud, and blocks)
-        if: ${{ !inputs.skip_gate && failure() && steps.atlasent_gate.outcome == 'failure' }}
+        if: ${{ failure() && steps.atlasent_gate.outcome == 'failure' }}
         run: |
-          echo "::error title=ATLASENT GATE DID NOT ALLOW::The AtlaSent publish gate step failed (deny/hold/escalate or gate error). Publishing @atlasent/enforce and @atlasent/action to npm is BLOCKED. Actor: ${{ github.actor }}. If this is a workflow_dispatch run with a genuine policy-activation gap (not a real policy violation), re-run with skip_gate=true — that bypass is logged and loud, not silent. skip_gate has no effect on tag-triggered runs."
-
-      - name: Gate bypass warning
-        if: ${{ inputs.skip_gate }}
-        run: |
-          echo "::warning title=PUBLISH GATE BYPASSED::skip_gate=true — AtlaSent authorization gate was bypassed by ${{ github.actor }} for this npm package publish. This run is NOT authorize-before-execute compliant. Use only to recover from a genuine gate deadlock; re-enable the gate on the next run."
+          echo "::error title=ATLASENT GATE DID NOT ALLOW::The AtlaSent publish gate step failed (deny/hold/escalate or gate error). Publishing @atlasent/enforce and @atlasent/action to npm is BLOCKED. Actor: ${{ github.actor }}. There is no bypass: fix the policy or the key, then push a new npm-v tag."
 
   publish:
     name: Publish
     needs: gate
+    # On a dispatch the gate job is skipped; still build + test (dry run). On a
+    # tag push this job runs only if the gate job succeeded.
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.gate.result == 'success') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -148,26 +138,26 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
-            echo "publish=${{ github.event.inputs.publish }}" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Dry run::Manual dispatch built and tested only. To publish, push an npm-v<semver> tag."
           fi
 
       # Publish enforce first (action depends on it), then action. npm uses the
       # publishConfig (access: public, provenance: true) declared in each
       # package.json; --provenance is passed explicitly for clarity.
       #
-      # Fail-closed: gated on the AtlaSent gate job's `verified` output (or an
-      # explicit `skip_gate` bypass) in addition to the pre-existing
-      # publish-intent resolution above. Gate error/deny/timeout means these
+      # Fail-closed: gated on the AtlaSent gate job's `verified` output in
+      # addition to the publish-intent resolution above (push only). Gate error/deny/timeout means these
       # steps do not run.
       # Trusted publishing requires npm >= 11.5.1 (Node 20 ships npm 10.x).
       - name: Upgrade npm for trusted publishing
-        if: ${{ steps.resolve.outputs.publish == 'true' && (needs.gate.outputs.verified == 'true' || inputs.skip_gate) }}
+        if: ${{ steps.resolve.outputs.publish == 'true' && needs.gate.outputs.verified == 'true' }}
         run: npm install -g npm@^11.5.1 && npm --version
 
       - name: Publish @atlasent/enforce
-        if: ${{ steps.resolve.outputs.publish == 'true' && (needs.gate.outputs.verified == 'true' || inputs.skip_gate) }}
+        if: ${{ steps.resolve.outputs.publish == 'true' && needs.gate.outputs.verified == 'true' }}
         run: npm publish -w @atlasent/enforce --provenance --access public
 
       - name: Publish @atlasent/action
-        if: ${{ steps.resolve.outputs.publish == 'true' && (needs.gate.outputs.verified == 'true' || inputs.skip_gate) }}
+        if: ${{ steps.resolve.outputs.publish == 'true' && needs.gate.outputs.verified == 'true' }}
         run: npm publish -w @atlasent/action --provenance --access public

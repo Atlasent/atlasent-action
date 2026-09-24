@@ -4,15 +4,16 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  # Manual runs are a DRY RUN: build + verify dist only. They never run the
+  # gate, sign, create a Release or move v1. The org's package.release policy
+  # only authorizes a `push` of a v<semver> tag for this workflow, and the old
+  # `bootstrap` input (skip the gate for the first-ever publish) is gone: v1
+  # exists, and a gate-skip input is a standing bypass of the gate.
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Tag to build and publish (e.g. v1.3.0). Use a vX.Y.Z tag to publish a release.'
+        description: 'Ref to build and verify (dry run only; publishing requires pushing a vX.Y.Z tag)'
         default: 'main'
-      bootstrap:
-        description: 'Skip the AtlaSent release gate for the bootstrap (first) publish, when no v1 of the action exists yet to gate with.'
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -54,10 +55,18 @@ jobs:
 
       # ── AtlaSent release gate (dogfood) ───────────────────────────────────
       # Gated on the action's OWN code (uses: ./), so each release is authorized
-      # by the very build it is releasing. Skipped only for the one-time
-      # bootstrap publish (workflow_dispatch with bootstrap=true), which breaks
-      # the chicken-and-egg of publishing v1 before any v1 exists to gate with.
-      # Subsequent tag-push releases run the gate.
+      # by the very build it is releasing. Runs on every tag push; there is no
+      # gate-skip input (the one-time `bootstrap` bypass was removed once v1
+      # existed). Manual dispatches never reach this step: they are dry runs,
+      # and every step after this one that signs or publishes is push-only.
+      #
+      # POLICY: from package.release v7 (atlasent-api
+      # docs/runbooks/PACKAGE_RELEASE_V7_APPLY.md) the template for this
+      # workflow, `package_release_atlasent_action_tag_release_manager`, binds
+      # `workflow: Release` + `event_name: push` + `refs/tags/v<X.Y.Z>`. Before
+      # v7 it bound neither workflow nor event, so a dispatch of any workflow
+      # here on a v-tag ref was allowed. Renaming this workflow turns the gate
+      # into a guaranteed deny.
       #
       # KNOWN ISSUES — items 1 and 3 are RESOLVED (verified 2026-09-22,
       # see each). Item 2 remains open. None of them was ever an
@@ -164,7 +173,7 @@ jobs:
       #      `idp_broker:mint` 403 noted in item 2 above, which the actor
       #      fallback correctly works around.
       - name: AtlaSent release gate
-        if: ${{ github.event.inputs.bootstrap != 'true' }}
+        if: ${{ github.event_name == 'push' }}
         uses: ./
         env:
           ATLASENT_API_KEY: ${{ secrets.ATLASENT_API_KEY }}
@@ -187,11 +196,13 @@ jobs:
 
       # ── R4: cosign keyless signing ────────────────────────────────────────
       - name: Install cosign
+        if: ${{ github.event_name == 'push' }}
         uses: sigstore/cosign-installer@v3
         with:
           cosign-release: 'v2.4.1'
 
       - name: Sign dist/index.js (keyless, Sigstore Fulcio + Rekor)
+        if: ${{ github.event_name == 'push' }}
         # cosign uses the GitHub Actions OIDC token — no long-lived key secret.
         # The resulting bundle (dist/index.js.bundle) contains the certificate
         # chain and transparency-log entry needed to verify the signature.
@@ -202,6 +213,7 @@ jobs:
             dist/index.js
 
       - name: Verify signature
+        if: ${{ github.event_name == 'push' }}
         # Smoke-test: re-verify using the bundle we just produced.
         run: |
           cosign verify-blob \
@@ -211,20 +223,18 @@ jobs:
             dist/index.js
 
       # ── Resolve which tag (if any) to publish ─────────────────────────────
-      # Publish on a tag push, or on a manual dispatch whose ref is a vX.Y.Z tag
-      # (the bootstrap path). A dispatch against 'main' builds + signs but does
-      # not publish a release.
+      # Only a tag push publishes. A manual dispatch is a dry run whatever its
+      # `ref` input says: it ran no gate, so it must not create a Release or
+      # move v1.
       - name: Resolve release tag
         id: rel
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
-          elif printf '%s' "${{ github.event.inputs.ref }}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "tag=${{ github.event.inputs.ref }}" >> "$GITHUB_OUTPUT"
-            echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Dry run::Manual dispatch built and verified dist/index.js only. To release, push a vX.Y.Z tag."
           fi
 
       # ── Publish the GitHub Release (this is what lists the action) ─────────

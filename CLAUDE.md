@@ -331,10 +331,12 @@ Full details: [`RELEASING.md`](RELEASING.md). Summary:
    - Creates the GitHub Release.
    - Moves the floating `v1` tag to this release (so `@v1` resolves to the new build).
 
-For the one-time bootstrap publish before any `v1` exists:
-```sh
-gh workflow run release.yml -f ref=v1.x.y -f bootstrap=true
-```
+There is no manual publish path. The one-time `bootstrap` gate-skip input was
+removed once `v1` existed, and `Publish packages` lost its `skip_gate` input
+in the same change. A manual run of either workflow is a dry run (build/verify
+or build/test only). Release only by pushing a tag: `vX.Y.Z` for `Release`,
+`npm-v<semver>` for `Publish packages`. The org's `package.release` policy (v7)
+authorizes only those tag pushes.
 
 Required secrets: `ATLASENT_API_KEY`, `ATLASENT_BASE_URL`.
 
